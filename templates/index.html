@@ -1,0 +1,406 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mini Terminal</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { margin:0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; background:#0b0e14; color:#c7d0d9; }
+    .topbar { padding:12px 16px; border-bottom:1px solid #1c2430; display:flex; gap:12px; align-items:center; }
+    .brand { color:#9bd; font-weight:800; letter-spacing:0.4px; }
+    .hint { color:#6f7f90; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+    .grid { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 49px); }
+    .panel { border-right:1px solid #1c2430; padding:12px; overflow:auto; }
+    .main { padding:12px; overflow:auto; }
+    .card { border:1px solid #1c2430; border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#0f1420; }
+    .row { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+    .sym { color:#ffd479; font-weight:800; }
+    .px { font-size:18px; font-weight:900; }
+    .small { color:#8aa0b3; font-size:12px; margin-top:4px; }
+    input, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none; }
+    button { padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; cursor:pointer; }
+    .btnrow { display:flex; gap:8px; margin-top:8px; }
+    pre { border:1px solid #1c2430; background:#0f1420; padding:10px 12px; border-radius:10px; overflow:auto; }
+    .clickable { cursor:pointer; }
+    .clickable:hover { outline:1px solid #2a3647; }
+    .headline { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+    .headline .title { font-weight:900; }
+    #chart { height: 520px; border:1px solid #1c2430; border-radius:10px; background:#0f1420; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">MINI TERMINAL</div>
+    <div class="hint">Real-time crypto (Binance) • Candles (Binance REST) • / focuses CMD</div>
+    <input id="cmd"
+      placeholder="CMD (e.g., BTCUSDT 1m • ETHUSDT 1h • SOLUSDT D • WATCH DOGEUSDT • CONNECT • HELP)"
+      style="flex:1; max-width:900px; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none;" />
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="card">
+        <div style="font-weight:900; margin-bottom:6px;">Watchlist</div>
+        <input id="symbols" value="BTCUSDT,ETHUSDT,SOLUSDT" />
+        <div class="btnrow">
+          <button id="connectBtn">Connect</button>
+          <button id="clearBtn">Clear</button>
+        </div>
+
+        <div class="small" style="margin-top:10px; font-weight:900;">Chart interval</div>
+        <select id="interval">
+          <option value="1m" selected>1m</option>
+          <option value="5m">5m</option>
+          <option value="15m">15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1d">1d</option>
+        </select>
+
+        <div class="small">
+          Hotkeys: 1=1m, 5=5m, 0=15m, H=1h, 4=4h, D=1d, R=reload, ↑/↓ cycle
+        </div>
+      </div>
+
+      <div id="cards"></div>
+    </div>
+
+    <div class="main">
+      <div class="card">
+        <div class="headline">
+          <div class="title" id="chartTitle">Chart: BTCUSDT (1m)</div>
+          <div class="small" id="chartLast">Last: —</div>
+        </div>
+        <div id="chart"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:900; margin-bottom:6px;">Live Feed</div>
+        <pre id="log" style="height: calc(100vh - 700px); min-height: 160px;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+
+<script>
+  let ws = null;
+
+  const cardsEl = document.getElementById("cards");
+  const logEl = document.getElementById("log");
+  const symbolsEl = document.getElementById("symbols");
+  const intervalEl = document.getElementById("interval");
+  const cmdEl = document.getElementById("cmd");
+
+  const chartTitleEl = document.getElementById("chartTitle");
+  const chartLastEl = document.getElementById("chartLast");
+
+  const state = {}; // symbol -> latest tick
+  let selectedSymbol = "BTCUSDT";
+
+  function log(line) {
+    logEl.textContent = line + "\\n" + logEl.textContent;
+  }
+
+  // ---- Chart ----
+  const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+    layout: { background: { type: 'solid', color: '#0f1420' }, textColor: '#c7d0d9' },
+    grid: { vertLines: { color: '#1c2430' }, horzLines: { color: '#1c2430' } },
+    rightPriceScale: { borderColor: '#1c2430' },
+    timeScale: { borderColor: '#1c2430' },
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#26a69a',
+    downColor: '#ef5350',
+    borderUpColor: '#26a69a',
+    borderDownColor: '#ef5350',
+    wickUpColor: '#26a69a',
+    wickDownColor: '#ef5350',
+  });
+
+  let lastBar = null;
+  let lastBarInterval = "1m";
+
+  async function loadCandles(symbol) {
+    const interval = intervalEl.value;
+    chartTitleEl.textContent = `Chart: ${symbol} (${interval})`;
+
+    try {
+      const res = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=500`);
+      const data = await res.json();
+      candleSeries.setData(data.candles);
+      chart.timeScale().fitContent();
+      log(`Loaded candles: ${symbol} ${interval} (${data.candles.length})`);
+
+      lastBarInterval = interval;
+      lastBar = (data.candles && data.candles.length) ? data.candles[data.candles.length - 1] : null;
+    } catch (e) {
+      log(`Candles error: ${e}`);
+    }
+  }
+
+  function intervalToSeconds(interval) {
+    const m = interval.match(/^(\\d+)([mhdw])$/i);
+    if (!m) return 60;
+    const n = parseInt(m[1], 10);
+    const unit = m[2].toLowerCase();
+    if (unit === "m") return n * 60;
+    if (unit === "h") return n * 3600;
+    if (unit === "d") return n * 86400;
+    if (unit === "w") return n * 604800;
+    return 60;
+  }
+
+  function barTimeForTs(tsMs, interval) {
+    const sec = intervalToSeconds(interval);
+    return Math.floor((tsMs / 1000) / sec) * sec;
+  }
+
+  function updateChartLastFromTick(t) {
+    if (t.symbol !== selectedSymbol) return;
+
+    if (Number.isFinite(t.last)) {
+      chartLastEl.textContent = `Last: ${t.last.toLocaleString()}`;
+    }
+
+    const interval = intervalEl.value;
+    if (lastBarInterval !== interval) return;
+
+    const bt = barTimeForTs(t.ts || Date.now(), interval);
+    const price = t.last;
+    if (!Number.isFinite(price)) return;
+
+    if (!lastBar) {
+      lastBar = { time: bt, open: price, high: price, low: price, close: price };
+      candleSeries.update(lastBar);
+      return;
+    }
+
+    if (bt === lastBar.time) {
+      lastBar = {
+        time: lastBar.time,
+        open: lastBar.open,
+        high: Math.max(lastBar.high, price),
+        low: Math.min(lastBar.low, price),
+        close: price
+      };
+      candleSeries.update(lastBar);
+      return;
+    }
+
+    if (bt > lastBar.time) {
+      lastBar = { time: bt, open: price, high: price, low: price, close: price };
+      candleSeries.update(lastBar);
+      return;
+    }
+  }
+
+  // ---- Watchlist UI ----
+  function renderCards() {
+    cardsEl.innerHTML = "";
+    const syms = Object.keys(state).sort();
+
+    syms.forEach(sym => {
+      const t = state[sym];
+      const last = (t.last ?? NaN);
+      const open = (t.open ?? NaN);
+      const chg = (isFinite(last) && isFinite(open)) ? (last - open) : NaN;
+      const chgPct = (isFinite(last) && isFinite(open) && open !== 0) ? (chg / open * 100) : NaN;
+
+      const card = document.createElement("div");
+      card.className = "card clickable";
+      card.onclick = () => {
+        selectedSymbol = sym;
+        loadCandles(sym);
+        updateChartLastFromTick(t);
+      };
+
+      card.innerHTML = `
+        <div class="row">
+          <div class="sym">${sym}</div>
+          <div class="px">${isFinite(last) ? last.toLocaleString() : "—"}</div>
+        </div>
+        <div class="row small">
+          <div>H: ${isFinite(t.high) ? t.high.toLocaleString() : "—"} • L: ${isFinite(t.low) ? t.low.toLocaleString() : "—"}</div>
+          <div>${isFinite(chg) ? (chg >= 0 ? "+" : "") + chg.toFixed(2) : "—"} (${isFinite(chgPct) ? (chgPct >= 0 ? "+" : "") + chgPct.toFixed(2) : "—"}%)</div>
+        </div>
+      `;
+      cardsEl.appendChild(card);
+    });
+  }
+
+  // ---- Hotkeys ----
+  function getWatchlistSymbols() {
+    return symbolsEl.value.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  }
+
+  function setIntervalValue(val) {
+    const opt = Array.from(intervalEl.options).find(o => o.value === val);
+    if (!opt) return;
+    intervalEl.value = val;
+    chartTitleEl.textContent = `Chart: ${selectedSymbol} (${val})`;
+    loadCandles(selectedSymbol);
+  }
+
+  function cycleSymbol(direction) {
+    const list = getWatchlistSymbols();
+    if (!list.length) return;
+    let idx = list.indexOf(selectedSymbol);
+    if (idx === -1) idx = 0;
+    idx = (idx + direction + list.length) % list.length;
+    selectedSymbol = list[idx];
+    loadCandles(selectedSymbol);
+    if (state[selectedSymbol]) updateChartLastFromTick(state[selectedSymbol]);
+  }
+
+  window.addEventListener("keydown", (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "select" || tag === "textarea") return;
+
+    const k = e.key;
+    if (k === "1") return setIntervalValue("1m");
+    if (k === "5") return setIntervalValue("5m");
+    if (k === "0") return setIntervalValue("15m");
+    if (k === "4") return setIntervalValue("4h");
+    if (k === "h" || k === "H") return setIntervalValue("1h");
+    if (k === "d" || k === "D") return setIntervalValue("1d");
+    if (k === "r" || k === "R") return loadCandles(selectedSymbol);
+    if (k === "ArrowUp") { e.preventDefault(); return cycleSymbol(-1); }
+    if (k === "ArrowDown") { e.preventDefault(); return cycleSymbol(+1); }
+  });
+
+  // ---- Command bar ----
+  function normalizeInterval(tok) {
+    if (!tok) return null;
+    const t = tok.toLowerCase();
+    if (t === "d" || t === "1d") return "1d";
+    if (t === "h" || t === "1h") return "1h";
+    const allowed = new Set(["1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w"]);
+    if (allowed.has(t)) return t;
+    if (t === "m1") return "1m";
+    if (t === "m5") return "5m";
+    if (t === "m15") return "15m";
+    return null;
+  }
+
+  function ensureSymbolInWatchlist(sym) {
+    const list = getWatchlistSymbols();
+    if (!list.includes(sym)) symbolsEl.value = [...list, sym].join(",");
+  }
+
+  function showHelp() {
+    log(
+`Commands:
+  BTCUSDT 1m          -> load BTCUSDT chart on 1m
+  ETHUSDT 1h          -> load ETHUSDT chart on 1h
+  SOLUSDT D           -> load SOLUSDT chart on 1d
+  BTCUSDT CHART 5m    -> explicit CHART command
+  WATCH BTCUSDT       -> add symbol to watchlist
+  RELOAD              -> reload candles for selected symbol
+  CONNECT             -> reconnect websocket using watchlist
+  HELP                -> show this help`
+    );
+  }
+
+  async function runCommand(raw) {
+    const line = (raw || "").trim();
+    if (!line) return;
+
+    const parts = line.split(/\\s+/);
+    const head = parts[0].toUpperCase();
+
+    if (head === "HELP" || head === "?") return showHelp();
+    if (head === "RELOAD" || head === "R") return loadCandles(selectedSymbol);
+    if (head === "CONNECT") return connect();
+
+    if (head === "WATCH" && parts[1]) {
+      const sym = parts[1].toUpperCase();
+      ensureSymbolInWatchlist(sym);
+      log(`Added to watchlist: ${sym} (type CONNECT to resubscribe live ticks)`);
+      return;
+    }
+
+    const symbol = head;
+    let intervalTok = null;
+    if (parts.length >= 2) {
+      if (parts[1].toUpperCase() === "CHART") intervalTok = parts[2] || null;
+      else intervalTok = parts[1] || null;
+    }
+    const interval = normalizeInterval(intervalTok) || intervalEl.value;
+
+    selectedSymbol = symbol;
+    ensureSymbolInWatchlist(symbol);
+
+    const opt = Array.from(intervalEl.options).find(o => o.value === interval);
+    if (opt) intervalEl.value = interval;
+
+    await loadCandles(selectedSymbol);
+    if (state[selectedSymbol]) updateChartLastFromTick(state[selectedSymbol]);
+
+    log(`CMD OK: ${selectedSymbol} ${interval}`);
+  }
+
+  cmdEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const v = cmdEl.value;
+      cmdEl.value = "";
+      runCommand(v);
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "/") {
+      const tag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toLowerCase() : "";
+      if (tag !== "input" && tag !== "select" && tag !== "textarea") {
+        e.preventDefault();
+        cmdEl.focus();
+      }
+    }
+  });
+
+  // ---- WebSocket ----
+  function connect() {
+    const symbols = getWatchlistSymbols();
+    if (ws) ws.close();
+
+    for (const k of Object.keys(state)) delete state[k];
+    renderCards();
+    log(`Connecting: ${symbols.join(", ")}`);
+
+    ws = new WebSocket(`ws://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`);
+
+    ws.onopen = () => {
+      log("WS open.");
+      setInterval(() => {
+        if (ws && ws.readyState === 1) ws.send("ping");
+      }, 15000);
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const t = JSON.parse(evt.data);
+        state[t.symbol] = t;
+        renderCards();
+        updateChartLastFromTick(t);
+      } catch {
+        log("Bad message: " + evt.data);
+      }
+    };
+
+    ws.onclose = () => log("WS closed.");
+    ws.onerror = () => log("WS error.");
+
+    if (!symbols.includes(selectedSymbol) && symbols.length) selectedSymbol = symbols[0];
+    loadCandles(selectedSymbol);
+  }
+
+  document.getElementById("connectBtn").onclick = connect;
+  document.getElementById("clearBtn").onclick = () => { logEl.textContent = ""; };
+  intervalEl.onchange = () => loadCandles(selectedSymbol);
+
+  connect();
+</script>
+</body>
+</html>
