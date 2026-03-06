@@ -126,6 +126,44 @@
     .px{ font-size:20px; }
     .card{ padding:14px 16px; }
   }
+    /* --- Mobile tab bar --- */
+.tabbar{
+  display:none;
+}
+
+@media (max-width: 900px){
+  /* add space so content doesn't hide behind tab bar */
+  body{
+    padding-bottom: 64px;
+  }
+
+  .tabbar{
+    display:flex;
+    position:fixed;
+    left:0; right:0; bottom:0;
+    border-top:1px solid var(--border);
+    background:var(--panel);
+    gap:8px;
+    padding:10px;
+    z-index:9999;
+  }
+
+  .tabbtn{
+    flex:1;
+    border-radius:14px;
+    min-height:44px;
+    font-weight:800;
+    border:1px solid var(--border);
+    background:#0b0e14;
+  }
+
+  .tabbtn.active{
+    outline:2px solid #2a3647;
+  }
+
+  /* default mobile view: show chart, hide feed */
+  #view-feed { display:none; }
+}
 </style>
 </head>
 <body>
@@ -138,7 +176,7 @@
   </div>
 
   <div class="grid">
-    <div class="panel">
+    <div class="panel" id="view-watchlist">
       <div class="card">
         <div style="font-weight:900; margin-bottom:6px;">Watchlist</div>
         <input id="symbols" value="BTCUSDT,ETHUSDT,SOLUSDT" />
@@ -165,7 +203,7 @@
       <div id="cards"></div>
     </div>
 
-    <div class="main">
+    <div class="main" id="view-chart">
       <div class="card">
         <div class="headline">
           <div class="title" id="chartTitle">Chart: BTCUSDT (1m)</div>
@@ -174,7 +212,7 @@
         <div id="chart"></div>
       </div>
 
-      <div class="card">
+      <div class="card" id="view-feed">
         <div style="font-weight:900; margin-bottom:6px;">Live Feed</div>
         <pre id="log" style="height: calc(100vh - 700px); min-height: 160px;"></pre>
       </div>
@@ -499,8 +537,61 @@
   document.getElementById("connectBtn").onclick = connect;
   document.getElementById("clearBtn").onclick = () => { logEl.textContent = ""; };
   intervalEl.onchange = () => loadCandles(selectedSymbol);
+// ---- Mobile tabs ----
+function setMobileTab(tab){
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  if (!isMobile) {
+    // Desktop: always show everything normally
+    document.getElementById("view-watchlist").style.display = "";
+    document.getElementById("view-chart").style.display = "";
+    document.getElementById("view-feed").style.display = "";
+    return;
+  }
 
+  const watch = document.getElementById("view-watchlist");
+  const chart = document.getElementById("view-chart");
+  const feed  = document.getElementById("view-feed");
+
+  if (tab === "watchlist"){
+    watch.style.display = "";
+    chart.style.display = "none";
+    feed.style.display = "none";
+  } else if (tab === "chart"){
+    watch.style.display = "none";
+    chart.style.display = "";
+    feed.style.display = "none";
+    // make sure chart sizes correctly after showing
+    setTimeout(() => chart && chart.scrollIntoView({block:"start"}), 50);
+  } else if (tab === "feed"){
+    watch.style.display = "none";
+    chart.style.display = "";
+    feed.style.display = "";
+    // scroll down to feed area
+    setTimeout(() => feed && feed.scrollIntoView({block:"start"}), 50);
+  }
+
+  // highlight active button
+  document.querySelectorAll(".tabbtn").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === tab);
+  });
+}
+
+document.getElementById("tabbar")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".tabbtn");
+  if (!btn) return;
+  setMobileTab(btn.dataset.tab);
+});
+
+// set a sensible default on load + on resize
+window.addEventListener("resize", () => setMobileTab("chart"));
+setMobileTab("chart");
   connect();
 </script>
+  <!-- Mobile Tab Bar -->
+<div class="tabbar" id="tabbar">
+  <button class="tabbtn active" data-tab="watchlist">Watchlist</button>
+  <button class="tabbtn" data-tab="chart">Chart</button>
+  <button class="tabbtn" data-tab="feed">Feed</button>
+</div>
 </body>
 </html>
