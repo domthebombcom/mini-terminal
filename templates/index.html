@@ -5,178 +5,40 @@
   <title>Mini Terminal</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-  :root{
-    --bg:#0b0e14;
-    --panel:#0f1420;
-    --border:#1c2430;
-    --text:#c7d0d9;
-    --muted:#8aa0b3;
-  }
-
-  body {
-    margin:0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-    background:var(--bg);
-    color:var(--text);
-  }
-
-  .topbar{
-    padding:12px 16px;
-    border-bottom:1px solid var(--border);
-    display:flex;
-    gap:12px;
-    align-items:center;
-  }
-
-  .brand{ color:#9bd; font-weight:900; letter-spacing:0.4px; }
-  .hint{ color:#6f7f90; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
-
-  .grid{
-    display:grid;
-    grid-template-columns: 360px 1fr;
-    height: calc(100vh - 49px);
-  }
-
-  .panel{
-    border-right:1px solid var(--border);
-    padding:12px;
-    overflow:auto;
-  }
-
-  .main{
-    padding:12px;
-    overflow:auto;
-  }
-
-  .card{
-    border:1px solid var(--border);
-    border-radius:12px;
-    padding:12px 14px;
-    margin-bottom:12px;
-    background:var(--panel);
-  }
-
-  .row{ display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
-  .sym{ color:#ffd479; font-weight:900; }
-  .px{ font-size:18px; font-weight:900; }
-  .small{ color:var(--muted); font-size:12px; margin-top:6px; line-height:1.3; }
-
-  input, select{
-    width:100%;
-    padding:12px 14px;
-    border-radius:12px;
-    border:1px solid var(--border);
-    background:var(--panel);
-    color:var(--text);
-    outline:none;
-    font-size:16px; /* important: iOS won’t zoom inputs */
-  }
-
-  button{
-    padding:12px 14px;
-    border-radius:12px;
-    border:1px solid var(--border);
-    background:var(--panel);
-    color:var(--text);
-    cursor:pointer;
-    font-size:16px;
-    min-height:44px; /* Apple comfy touch target */
-  }
-
-  .btnrow{ display:flex; gap:10px; margin-top:10px; }
-  pre{ border:1px solid var(--border); background:var(--panel); padding:12px 14px; border-radius:12px; overflow:auto; }
-
-  .clickable{ cursor:pointer; }
-  .clickable:active{ transform: scale(0.99); }
-  .clickable:hover{ outline:1px solid #2a3647; }
-
-  .headline{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
-  .headline .title{ font-weight:900; }
-
-  #chart{
-    height: 520px;
-    border:1px solid var(--border);
-    border-radius:12px;
-    background:var(--panel);
-  }
-
-  /* ✅ Mobile mode: stack panels, bigger chart, fewer cramped columns */
-  @media (max-width: 900px){
-    .topbar{
-      flex-wrap:wrap;
-      align-items:stretch;
-    }
-    .hint{ max-width:none; width:100%; }
-
-    .grid{
-      grid-template-columns: 1fr;
-      height: auto;
-    }
-
-    .panel{
-      border-right:none;
-      border-bottom:1px solid var(--border);
-    }
-
-    #chart{
-      height: 420px;
-    }
-
-    /* Make the cards feel less dense on phone */
-    .px{ font-size:20px; }
-    .card{ padding:14px 16px; }
-  }
-    /* --- Mobile tab bar --- */
-.tabbar{
-  display:none;
-}
-
-@media (max-width: 900px){
-  /* add space so content doesn't hide behind tab bar */
-  body{
-    padding-bottom: 64px;
-  }
-
-  .tabbar{
-    display:flex;
-    position:fixed;
-    left:0; right:0; bottom:0;
-    border-top:1px solid var(--border);
-    background:var(--panel);
-    gap:8px;
-    padding:10px;
-    z-index:9999;
-  }
-
-  .tabbtn{
-    flex:1;
-    border-radius:14px;
-    min-height:44px;
-    font-weight:800;
-    border:1px solid var(--border);
-    background:#0b0e14;
-  }
-
-  .tabbtn.active{
-    outline:2px solid #2a3647;
-  }
-
-  /* default mobile view: show chart, hide feed */
-  #view-feed { display:none; }
-}
-</style>
+    body { margin:0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; background:#0b0e14; color:#c7d0d9; }
+    .topbar { padding:12px 16px; border-bottom:1px solid #1c2430; display:flex; gap:12px; align-items:center; }
+    .brand { color:#9bd; font-weight:800; letter-spacing:0.4px; }
+    .hint { color:#6f7f90; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:520px; }
+    .grid { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 49px); }
+    .panel { border-right:1px solid #1c2430; padding:12px; overflow:auto; }
+    .main { padding:12px; overflow:auto; }
+    .card { border:1px solid #1c2430; border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#0f1420; }
+    .row { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+    .sym { color:#ffd479; font-weight:800; }
+    .px { font-size:18px; font-weight:900; }
+    .small { color:#8aa0b3; font-size:12px; margin-top:4px; }
+    input, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none; }
+    button { padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; cursor:pointer; }
+    .btnrow { display:flex; gap:8px; margin-top:8px; }
+    pre { border:1px solid #1c2430; background:#0f1420; padding:10px 12px; border-radius:10px; overflow:auto; }
+    .clickable { cursor:pointer; }
+    .clickable:hover { outline:1px solid #2a3647; }
+    .headline { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; }
+    .headline .title { font-weight:900; }
+    #chart { height: 520px; border:1px solid #1c2430; border-radius:10px; background:#0f1420; }
+  </style>
 </head>
 <body>
   <div class="topbar">
     <div class="brand">MINI TERMINAL</div>
     <div class="hint">Real-time crypto (Binance) • Candles (Binance REST) • / focuses CMD</div>
     <input id="cmd"
-  placeholder="CMD (e.g., BTCUSDT 1m • ETHUSDT 1h • SOLUSDT D • WATCH DOGEUSDT • CONNECT • HELP)"
-  style="flex:1; max-width:none; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none;" />
+      placeholder="CMD (e.g., BTCUSDT 1m • ETHUSDT 1h • SOLUSDT D • WATCH DOGEUSDT • CONNECT • HELP)"
+      style="flex:1; max-width:900px; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none;" />
   </div>
 
   <div class="grid">
-    <div class="panel" id="view-watchlist">
+    <div class="panel">
       <div class="card">
         <div style="font-weight:900; margin-bottom:6px;">Watchlist</div>
         <input id="symbols" value="BTCUSDT,ETHUSDT,SOLUSDT" />
@@ -203,7 +65,7 @@
       <div id="cards"></div>
     </div>
 
-    <div class="main" id="view-chart">
+    <div class="main">
       <div class="card">
         <div class="headline">
           <div class="title" id="chartTitle">Chart: BTCUSDT (1m)</div>
@@ -212,7 +74,7 @@
         <div id="chart"></div>
       </div>
 
-      <div class="card" id="view-feed">
+      <div class="card">
         <div style="font-weight:900; margin-bottom:6px;">Live Feed</div>
         <pre id="log" style="height: calc(100vh - 700px); min-height: 160px;"></pre>
       </div>
@@ -537,61 +399,8 @@
   document.getElementById("connectBtn").onclick = connect;
   document.getElementById("clearBtn").onclick = () => { logEl.textContent = ""; };
   intervalEl.onchange = () => loadCandles(selectedSymbol);
-// ---- Mobile tabs ----
-function setMobileTab(tab){
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
-  if (!isMobile) {
-    // Desktop: always show everything normally
-    document.getElementById("view-watchlist").style.display = "";
-    document.getElementById("view-chart").style.display = "";
-    document.getElementById("view-feed").style.display = "";
-    return;
-  }
 
-  const watch = document.getElementById("view-watchlist");
-  const chart = document.getElementById("view-chart");
-  const feed  = document.getElementById("view-feed");
-
-  if (tab === "watchlist"){
-    watch.style.display = "";
-    chart.style.display = "none";
-    feed.style.display = "none";
-  } else if (tab === "chart"){
-    watch.style.display = "none";
-    chart.style.display = "";
-    feed.style.display = "none";
-    // make sure chart sizes correctly after showing
-    setTimeout(() => chart && chart.scrollIntoView({block:"start"}), 50);
-  } else if (tab === "feed"){
-    watch.style.display = "none";
-    chart.style.display = "";
-    feed.style.display = "";
-    // scroll down to feed area
-    setTimeout(() => feed && feed.scrollIntoView({block:"start"}), 50);
-  }
-
-  // highlight active button
-  document.querySelectorAll(".tabbtn").forEach(b => {
-    b.classList.toggle("active", b.dataset.tab === tab);
-  });
-}
-
-document.getElementById("tabbar")?.addEventListener("click", (e) => {
-  const btn = e.target.closest(".tabbtn");
-  if (!btn) return;
-  setMobileTab(btn.dataset.tab);
-});
-
-// set a sensible default on load + on resize
-window.addEventListener("resize", () => setMobileTab("chart"));
-setMobileTab("chart");
   connect();
 </script>
-  <!-- Mobile Tab Bar -->
-<div class="tabbar" id="tabbar">
-  <button class="tabbtn active" data-tab="watchlist">Watchlist</button>
-  <button class="tabbtn" data-tab="chart">Chart</button>
-  <button class="tabbtn" data-tab="feed">Feed</button>
-</div>
 </body>
 </html>
