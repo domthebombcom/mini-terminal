@@ -1,0 +1,1 @@
+# Mini Terminal V2\n\nVersion 2 adds:\n- Crypto streaming\n- Equities / ETFs / mutual funds\n- Macro & market data\n- Treasury curve / spreads\n- SEC filings\n- Natural language search\n- Typeahead suggestions\n
