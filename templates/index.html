@@ -32,9 +32,10 @@
   <div class="topbar">
     <div class="brand">MINI TERMINAL</div>
     <div class="hint">Real-time crypto (Binance) • Candles (Binance REST) • / focuses CMD</div>
-    <input id="cmd"
+    <input id="cmd" list="cmdSuggestions"
       placeholder="CMD (e.g., BTCUSDT 1m • ETHUSDT 1h • SOLUSDT D • WATCH DOGEUSDT • CONNECT • HELP)"
       style="flex:1; max-width:900px; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none;" />
+    <datalist id="cmdSuggestions"></datalist>
   </div>
 
   <div class="grid">
@@ -45,6 +46,18 @@
         <div class="btnrow">
           <button id="connectBtn">Connect</button>
           <button id="clearBtn">Clear</button>
+        </div>
+
+        <div class="small" style="margin-top:10px; font-weight:900;">Asset class</div>
+        <select id="assetClass"></select>
+        <div class="btnrow">
+          <button id="loadAssetClassBtn">Load Basket</button>
+        </div>
+
+        <div class="small" style="margin-top:10px; font-weight:900;">Economic data points</div>
+        <select id="econPoint"></select>
+        <div class="btnrow">
+          <button id="econCmdBtn">Use in CMD</button>
         </div>
 
         <div class="small" style="margin-top:10px; font-weight:900;">Chart interval</div>
@@ -85,12 +98,16 @@
 
 <script>
   let ws = null;
+  let wsPingTimer = null;
 
   const cardsEl = document.getElementById("cards");
   const logEl = document.getElementById("log");
   const symbolsEl = document.getElementById("symbols");
   const intervalEl = document.getElementById("interval");
   const cmdEl = document.getElementById("cmd");
+  const cmdSuggestionsEl = document.getElementById("cmdSuggestions");
+  const assetClassEl = document.getElementById("assetClass");
+  const econPointEl = document.getElementById("econPoint");
 
   const chartTitleEl = document.getElementById("chartTitle");
   const chartLastEl = document.getElementById("chartLast");
@@ -100,6 +117,86 @@
 
   function log(line) {
     logEl.textContent = line + "\\n" + logEl.textContent;
+  }
+
+  const DEFAULT_SYMBOL_SUGGESTIONS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"];
+
+  const ASSET_CLASS_PRESETS = {
+    "Crypto Majors": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "Layer-1": ["SOLUSDT", "AVAXUSDT", "ADAUSDT"],
+    "Meme": ["DOGEUSDT", "SHIBUSDT", "PEPEUSDT"],
+    "Exchange": ["BNBUSDT", "OKBUSDT", "CROUSDT"]
+  };
+
+  const ECON_POINT_PRESETS = [
+    { label: "CPI (FRED: CPIAUCSL)", cmd: "FRED CPIAUCSL" },
+    { label: "Unemployment (FRED: UNRATE)", cmd: "FRED UNRATE" },
+    { label: "GDP (FRED: GDP)", cmd: "FRED GDP" },
+    { label: "Fed Funds (FRED: FEDFUNDS)", cmd: "FRED FEDFUNDS" },
+    { label: "10Y Treasury (FRED: DGS10)", cmd: "FRED DGS10" }
+  ];
+
+  function initDropdowns() {
+    assetClassEl.innerHTML = "";
+    for (const [name] of Object.entries(ASSET_CLASS_PRESETS)) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      assetClassEl.appendChild(opt);
+    }
+
+    econPointEl.innerHTML = "";
+    for (const entry of ECON_POINT_PRESETS) {
+      const opt = document.createElement("option");
+      opt.value = entry.cmd;
+      opt.textContent = entry.label;
+      econPointEl.appendChild(opt);
+    }
+  }
+
+  function loadSelectedAssetClass() {
+    const key = assetClassEl.value;
+    const symbols = ASSET_CLASS_PRESETS[key] || [];
+    if (!symbols.length) {
+      log(`No symbols configured for asset class: ${key}`);
+      return;
+    }
+    symbolsEl.value = symbols.join(",");
+    refreshCommandSuggestions();
+    connect();
+  }
+
+  function useSelectedEconPoint() {
+    const cmd = econPointEl.value;
+    if (!cmd) return;
+    cmdEl.value = cmd;
+    cmdEl.focus();
+    log(`Inserted into CMD: ${cmd} (press Enter)`);
+  }
+
+  function refreshCommandSuggestions() {
+    const symbols = new Set([
+      ...DEFAULT_SYMBOL_SUGGESTIONS,
+      ...getWatchlistSymbols(),
+      ...Object.keys(state)
+    ]);
+
+    const intervals = ["1m", "5m", "15m", "1h", "4h", "1d"];
+    const base = ["HELP", "CONNECT", "RELOAD", "WATCH BTCUSDT", "ETHUSDT 1h", "SOLUSDT D", ...ECON_POINT_PRESETS.map(e => e.cmd)];
+    const suggestions = new Set(base);
+
+    for (const s of symbols) {
+      suggestions.add(s);
+      suggestions.add(`WATCH ${s}`);
+      for (const i of intervals) suggestions.add(`${s} ${i}`);
+    }
+
+    cmdSuggestionsEl.innerHTML = "";
+    for (const s of Array.from(suggestions).sort()) {
+      const opt = document.createElement("option");
+      opt.value = s;
+      cmdSuggestionsEl.appendChild(opt);
+    }
   }
 
   // ---- Chart ----
@@ -314,6 +411,12 @@
     if (head === "RELOAD" || head === "R") return loadCandles(selectedSymbol);
     if (head === "CONNECT") return connect();
 
+    if (head === "FRED" && parts[1]) {
+      const seriesId = parts[1].toUpperCase();
+      log(`Economic query queued: ${seriesId}. Root app currently streams crypto only; use mini-terminal-v2-pro for macro charts.`);
+      return;
+    }
+
     if (head === "WATCH" && parts[1]) {
       const sym = parts[1].toUpperCase();
       ensureSymbolInWatchlist(sym);
@@ -363,17 +466,28 @@
   // ---- WebSocket ----
   function connect() {
     const symbols = getWatchlistSymbols();
+    if (!symbols.length) {
+      log("Add at least one symbol in the watchlist before connecting.");
+      return;
+    }
+
     if (ws) ws.close();
+    if (wsPingTimer) {
+      clearInterval(wsPingTimer);
+      wsPingTimer = null;
+    }
 
     for (const k of Object.keys(state)) delete state[k];
     renderCards();
+    refreshCommandSuggestions();
     log(`Connecting: ${symbols.join(", ")}`);
 
-    ws = new WebSocket(`ws://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`);
+    const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${wsProtocol}://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`);
 
     ws.onopen = () => {
       log("WS open.");
-      setInterval(() => {
+      wsPingTimer = setInterval(() => {
         if (ws && ws.readyState === 1) ws.send("ping");
       }, 15000);
     };
@@ -383,13 +497,20 @@
         const t = JSON.parse(evt.data);
         state[t.symbol] = t;
         renderCards();
+        refreshCommandSuggestions();
         updateChartLastFromTick(t);
       } catch {
         log("Bad message: " + evt.data);
       }
     };
 
-    ws.onclose = () => log("WS closed.");
+    ws.onclose = () => {
+      if (wsPingTimer) {
+        clearInterval(wsPingTimer);
+        wsPingTimer = null;
+      }
+      log("WS closed.");
+    };
     ws.onerror = () => log("WS error.");
 
     if (!symbols.includes(selectedSymbol) && symbols.length) selectedSymbol = symbols[0];
@@ -397,9 +518,14 @@
   }
 
   document.getElementById("connectBtn").onclick = connect;
+  document.getElementById("loadAssetClassBtn").onclick = loadSelectedAssetClass;
+  document.getElementById("econCmdBtn").onclick = useSelectedEconPoint;
+  symbolsEl.addEventListener("input", refreshCommandSuggestions);
   document.getElementById("clearBtn").onclick = () => { logEl.textContent = ""; };
   intervalEl.onchange = () => loadCandles(selectedSymbol);
 
+  initDropdowns();
+  refreshCommandSuggestions();
   connect();
 </script>
 </body>
