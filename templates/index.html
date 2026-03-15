@@ -32,9 +32,10 @@
   <div class="topbar">
     <div class="brand">MINI TERMINAL</div>
     <div class="hint">Real-time crypto (Binance) • Candles (Binance REST) • / focuses CMD</div>
-    <input id="cmd"
+    <input id="cmd" list="cmdSuggestions"
       placeholder="CMD (e.g., BTCUSDT 1m • ETHUSDT 1h • SOLUSDT D • WATCH DOGEUSDT • CONNECT • HELP)"
       style="flex:1; max-width:900px; padding:10px 12px; border-radius:10px; border:1px solid #1c2430; background:#0f1420; color:#c7d0d9; outline:none;" />
+    <datalist id="cmdSuggestions"></datalist>
   </div>
 
   <div class="grid">
@@ -85,12 +86,14 @@
 
 <script>
   let ws = null;
+  let wsPingTimer = null;
 
   const cardsEl = document.getElementById("cards");
   const logEl = document.getElementById("log");
   const symbolsEl = document.getElementById("symbols");
   const intervalEl = document.getElementById("interval");
   const cmdEl = document.getElementById("cmd");
+  const cmdSuggestionsEl = document.getElementById("cmdSuggestions");
 
   const chartTitleEl = document.getElementById("chartTitle");
   const chartLastEl = document.getElementById("chartLast");
@@ -100,6 +103,33 @@
 
   function log(line) {
     logEl.textContent = line + "\\n" + logEl.textContent;
+  }
+
+  const DEFAULT_SYMBOL_SUGGESTIONS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"];
+
+  function refreshCommandSuggestions() {
+    const symbols = new Set([
+      ...DEFAULT_SYMBOL_SUGGESTIONS,
+      ...getWatchlistSymbols(),
+      ...Object.keys(state)
+    ]);
+
+    const intervals = ["1m", "5m", "15m", "1h", "4h", "1d"];
+    const base = ["HELP", "CONNECT", "RELOAD", "WATCH BTCUSDT", "ETHUSDT 1h", "SOLUSDT D"];
+    const suggestions = new Set(base);
+
+    for (const s of symbols) {
+      suggestions.add(s);
+      suggestions.add(`WATCH ${s}`);
+      for (const i of intervals) suggestions.add(`${s} ${i}`);
+    }
+
+    cmdSuggestionsEl.innerHTML = "";
+    for (const s of Array.from(suggestions).sort()) {
+      const opt = document.createElement("option");
+      opt.value = s;
+      cmdSuggestionsEl.appendChild(opt);
+    }
   }
 
   // ---- Chart ----
@@ -363,17 +393,28 @@
   // ---- WebSocket ----
   function connect() {
     const symbols = getWatchlistSymbols();
+    if (!symbols.length) {
+      log("Add at least one symbol in the watchlist before connecting.");
+      return;
+    }
+
     if (ws) ws.close();
+    if (wsPingTimer) {
+      clearInterval(wsPingTimer);
+      wsPingTimer = null;
+    }
 
     for (const k of Object.keys(state)) delete state[k];
     renderCards();
+    refreshCommandSuggestions();
     log(`Connecting: ${symbols.join(", ")}`);
 
-    ws = new WebSocket(`ws://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`);
+    const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${wsProtocol}://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`);
 
     ws.onopen = () => {
       log("WS open.");
-      setInterval(() => {
+      wsPingTimer = setInterval(() => {
         if (ws && ws.readyState === 1) ws.send("ping");
       }, 15000);
     };
@@ -383,13 +424,20 @@
         const t = JSON.parse(evt.data);
         state[t.symbol] = t;
         renderCards();
+        refreshCommandSuggestions();
         updateChartLastFromTick(t);
       } catch {
         log("Bad message: " + evt.data);
       }
     };
 
-    ws.onclose = () => log("WS closed.");
+    ws.onclose = () => {
+      if (wsPingTimer) {
+        clearInterval(wsPingTimer);
+        wsPingTimer = null;
+      }
+      log("WS closed.");
+    };
     ws.onerror = () => log("WS error.");
 
     if (!symbols.includes(selectedSymbol) && symbols.length) selectedSymbol = symbols[0];
@@ -397,9 +445,11 @@
   }
 
   document.getElementById("connectBtn").onclick = connect;
+  symbolsEl.addEventListener("input", refreshCommandSuggestions);
   document.getElementById("clearBtn").onclick = () => { logEl.textContent = ""; };
   intervalEl.onchange = () => loadCandles(selectedSymbol);
 
+  refreshCommandSuggestions();
   connect();
 </script>
 </body>
