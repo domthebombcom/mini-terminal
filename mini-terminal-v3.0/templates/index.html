@@ -1,0 +1,228 @@
+
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Mini Terminal V3.0</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+:root{--bg:#0b0e14;--panel:#111722;--border:#2a2f3a;--text:#e9edf3;--muted:#a3adbb;--accent:#ff8c1a;--accent2:#ffb15c}
+body{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Courier New",monospace;background:var(--bg);color:var(--text)}
+.topbar{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:center;position:relative}
+.brand{color:var(--accent);font-weight:900}.hint{color:#6f7f90;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
+.grid{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 49px)} .panel{border-right:1px solid var(--border);padding:12px;overflow:auto}.main{padding:12px;overflow:auto}
+.card{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px;background:var(--panel)}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}.sym{color:var(--accent2);font-weight:900}.px{font-size:18px;font-weight:900}.small{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.35}
+input,select,button{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);outline:none;font-size:16px}
+button{cursor:pointer;min-height:44px}.btnrow{display:flex;gap:10px;margin-top:10px}
+pre{border:1px solid var(--border);background:var(--panel);padding:12px 14px;border-radius:12px;overflow:auto}
+.clickable{cursor:pointer}.clickable:hover{outline:1px solid var(--accent)}.headline{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px}.headline .title{font-weight:900}
+#chart{height:520px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+.typeahead{position:absolute;top:54px;left:16px;right:16px;max-width:960px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden;z-index:10000;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.typeahead-item{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.typeahead-item:last-child{border-bottom:none}.typeahead-item:hover{background:#1a1f2b;cursor:pointer}.typeahead-left{font-weight:900;color:var(--accent2)}.typeahead-right{color:var(--muted);font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.chip{padding:10px 12px;border-radius:999px;border:1px solid var(--accent);background:#1a1f2b;font-weight:800;font-size:14px;cursor:pointer;color:var(--accent2)}
+
+.quickgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.quickbtn{background:linear-gradient(180deg,#1b2230,#121824);border:1px solid var(--accent);color:var(--accent2);font-weight:800}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid var(--accent);color:var(--accent2);font-size:11px}
+.metricgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric{border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:#0e141f}
+.metric .label{font-size:11px;color:var(--muted);margin-bottom:6px}
+.metric .val{font-size:18px;font-weight:900;color:var(--accent2)}
+.footer{margin-top:8px;color:var(--muted);font-size:11px}
+@media (max-width:900px){.metricgrid{grid-template-columns:repeat(2,minmax(0,1fr));}
+.topbar{flex-wrap:wrap;align-items:stretch}.hint{max-width:none;width:100%}.grid{grid-template-columns:1fr;height:auto}.panel{border-right:none;border-bottom:1px solid var(--border)}#chart{height:420px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">MINI TERMINAL V3.0</div>
+  <div class="hint">Crypto · Equities · ETFs · Mutual Funds · Macro · Rates · SEC · Dashboards</div>
+  <input id="cmd" placeholder='V3.0: "show apple", "latest filings for msft", "plot cpi and unrate 20", "10-2 spread"' style="flex:1;max-width:none" />
+  <div class="typeahead" id="typeahead" style="display:none;"></div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="card">
+      <div style="font-weight:900;margin-bottom:6px;">Watchlist</div>
+      <input id="symbols" value="BTCUSDT,ETHUSDT,SOLUSDT,AAPL,SPY" />
+      <div class="btnrow">
+        <button id="connectBtn">Connect</button>
+        <button id="clearBtn">Clear</button>
+      </div>
+      <div class="small" style="margin-top:10px;font-weight:900;">Chart interval</div>
+      <select id="interval">
+        <option value="1m">1m</option><option value="5m">5m</option><option value="15m">15m</option>
+        <option value="1h">1h</option><option value="4h">4h</option><option value="1d" selected>1d</option>
+      </select>
+      <div class="small">Hotkeys: 1=1m, 5=5m, 0=15m, H=1h, 4=4h, D=1d, R=reload, ↑/↓ cycle</div>
+    </div>
+      <div class="card">
+        <div style="font-weight:900;margin-bottom:6px;">Quick Actions <span class="badge">V3.0</span></div>
+        <div class="quickgrid">
+          <button class="quickbtn" data-cmd="AAPL">AAPL</button>
+          <button class="quickbtn" data-cmd="SPY">SPY</button>
+          <button class="quickbtn" data-cmd="BTCUSDT 5m">BTC 5m</button>
+          <button class="quickbtn" data-cmd="10-2 spread">10-2</button>
+          <button class="quickbtn" data-cmd="plot CPI and UNRATE 20">CPI+UNRATE</button>
+          <button class="quickbtn" data-cmd="latest filings for NVDA">NVDA filings</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:900;margin-bottom:8px;">Market Snapshot</div>
+        <div class="metricgrid" id="snapshotGrid">
+          <div class="metric"><div class="label">BTC</div><div class="val">—</div></div>
+          <div class="metric"><div class="label">S&P 500</div><div class="val">—</div></div>
+          <div class="metric"><div class="label">10Y</div><div class="val">—</div></div>
+          <div class="metric"><div class="label">10-2</div><div class="val">—</div></div>
+        </div>
+      </div>
+    <div id="cards"></div>
+  </div>
+
+  <div class="main">
+    <div class="card">
+      <div class="headline">
+        <div class="title" id="chartTitle">Chart</div>
+        <div class="small" id="chartLast">Last: —</div>
+      </div>
+      <div id="chart"></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:900;margin-bottom:6px;">Research</div>
+      <div id="feedContent" class="small" style="margin-bottom:10px;">Type HELP for examples.</div>
+      <div style="font-weight:900;margin-bottom:6px;">Live Feed</div>
+      <pre id="log" style="height:260px;min-height:160px;"></pre>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let ws = null;
+const cardsEl = document.getElementById("cards"), logEl = document.getElementById("log"), symbolsEl = document.getElementById("symbols"),
+      intervalEl = document.getElementById("interval"), cmdEl = document.getElementById("cmd"), typeaheadEl = document.getElementById("typeahead"),
+      chartTitleEl = document.getElementById("chartTitle"), chartLastEl = document.getElementById("chartLast"), feedContentEl = document.getElementById("feedContent");
+const state = {}; let selectedSymbol = "BTCUSDT", catalog = [], macroSeries = [], lastBar = null, lastBarInterval = "1d";
+const STORE_KEY = "mini_terminal_v2";
+const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+  layout:{background:{type:'solid',color:'#0f1420'},textColor:'#c7d0d9'},
+  grid:{vertLines:{color:'#1c2430'},horzLines:{color:'#1c2430'}},
+  rightPriceScale:{borderColor:'#1c2430'}, timeScale:{borderColor:'#1c2430'}
+});
+const candleSeries = chart.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350'});
+const yieldSeries = chart.addLineSeries();
+
+function saveState(extra={}){ localStorage.setItem(STORE_KEY, JSON.stringify({symbols:symbolsEl.value, interval:intervalEl.value, selectedSymbol, ...extra})); }
+function loadState(){ try { return JSON.parse(localStorage.getItem(STORE_KEY)||"null"); } catch { return null; } }
+function log(line){ logEl.textContent = line + "\n" + logEl.textContent; }
+function clearMacroSeries(){ try { for (const s of macroSeries) chart.removeSeries(s); } catch {} macroSeries = []; }
+
+function levenshtein(a,b){ a=(a||"").toLowerCase(); b=(b||"").toLowerCase(); const m=a.length,n=b.length,dp=Array.from({length:m+1},()=>new Array(n+1).fill(0)); for(let i=0;i<=m;i++)dp[i][0]=i; for(let j=0;j<=n;j++)dp[0][j]=j; for(let i=1;i<=m;i++)for(let j=1;j<=n;j++){const cost=a[i-1]===b[j-1]?0:1; dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+cost);} return dp[m][n];}
+function bestFuzzyMatch(query, choices){ const q=(query||"").trim().toLowerCase(); if(!q) return null; let best=null; for(const c of choices){ const cl=c.toLowerCase(); let score=0; if(cl===q) score=0; else if(cl.includes(q)||q.includes(cl)) score=1; else score=2+levenshtein(q,cl)/Math.max(1,Math.max(q.length,cl.length)); if(!best||score<best.score) best={choice:c,score}; } return best; }
+
+async function loadCatalog(){ try{ const res=await fetch("/api/catalog"); catalog=(await res.json()).items||[]; }catch{ catalog=[]; } }
+function rankCatalog(query){ const q=(query||"").trim().toLowerCase(); if(!q) return []; return catalog.map(it=>{const scoreKey=bestFuzzyMatch(q,[it.key])?.score??999; const scoreLabel=bestFuzzyMatch(q,[it.label])?.score??999; const sub=(it.key.toLowerCase().includes(q)||it.label.toLowerCase().includes(q))?-0.5:0; return {it,score:Math.min(scoreKey,scoreLabel)+sub};}).sort((a,b)=>a.score-b.score).map(x=>x.it); }
+function hideTypeahead(){ typeaheadEl.style.display="none"; typeaheadEl.innerHTML=""; }
+function showTypeahead(items){ if(!items.length) return hideTypeahead(); typeaheadEl.innerHTML=items.slice(0,8).map((it,i)=>`<div class="typeahead-item" data-i="${i}"><div class="typeahead-left">${it.key}</div><div class="typeahead-right">${it.type} • ${it.label}</div></div>`).join(""); typeaheadEl.style.display="block"; typeaheadEl.onclick=(e)=>{ const row=e.target.closest(".typeahead-item"); if(!row) return; const pick=items[parseInt(row.dataset.i,10)]; if(!pick) return; cmdEl.value=pick.key; hideTypeahead(); runCommand(pick.key); }; }
+
+async function loadCandles(symbol){
+  clearMacroSeries(); yieldSeries.setData([]); const interval=intervalEl.value; chartTitleEl.textContent=`Chart: ${symbol} (${interval})`;
+  try{
+    const upper=symbol.toUpperCase();
+    if(upper.endsWith("USDT")||upper.endsWith("USDC")){
+      const data=await (await fetch(`/api/candles?symbol=${encodeURIComponent(upper)}&interval=${encodeURIComponent(interval)}&limit=500`)).json();
+      const candles=data.candles||[]; candleSeries.setData(candles); chart.timeScale().fitContent(); lastBarInterval=interval; lastBar=candles.length?candles[candles.length-1]:null; feedContentEl.textContent="Real-time crypto via Binance."; log(`Loaded crypto: ${upper} ${interval}`); return;
+    }
+    const avData=await (await fetch(`/api/av/daily?symbol=${encodeURIComponent(upper)}&outputsize=compact`)).json();
+    if(!avData.error&&avData.candles){ candleSeries.setData(avData.candles); chart.timeScale().fitContent(); lastBarInterval="1d"; lastBar=avData.candles.length?avData.candles[avData.candles.length-1]:null; feedContentEl.textContent="Daily data via Alpha Vantage."; log(`Loaded daily: ${upper} (Alpha Vantage)`); return; }
+    const stData=await (await fetch(`/api/stooq/candles?symbol=${encodeURIComponent(upper)}`)).json();
+    const candles=stData.candles||[]; candleSeries.setData(candles); chart.timeScale().fitContent(); lastBarInterval="1d"; lastBar=candles.length?candles[candles.length-1]:null; feedContentEl.textContent="Daily data via Stooq fallback."; log(`Loaded daily: ${upper} (Stooq)`);
+  }catch(e){ log(`Candles error: ${e}`); }
+}
+
+async function loadFred(ids, yearsBack){
+  candleSeries.setData([]); yieldSeries.setData([]); clearMacroSeries();
+  let cosd=null; if(yearsBack&&Number.isFinite(yearsBack)){ const now=new Date(), start=new Date(now.getFullYear()-yearsBack,now.getMonth(),now.getDate()); cosd=start.toISOString().slice(0,10); }
+  chartTitleEl.textContent=`FRED: ${ids.join(",")}`;
+  try{ const qs=new URLSearchParams(); qs.set("ids",ids.join(",")); if(cosd) qs.set("cosd",cosd); const data=await (await fetch(`/api/fred/series?${qs.toString()}`)).json();
+    for(const id of ids){ const s=chart.addLineSeries(); s.setData((data.series||{})[id]||[]); macroSeries.push(s); }
+    chart.timeScale().fitContent(); feedContentEl.innerHTML=`<div style="font-weight:900;margin-bottom:6px;">Economic & Market Data</div><div>${ids.join(",")}</div><div style="margin-top:6px;">Source: FRED</div>`; log(`Loaded FRED: ${ids.join(",")}`);
+  }catch(e){ log(`FRED error: ${e}`); }
+}
+async function loadYields(tenor){ candleSeries.setData([]); yieldSeries.setData([]); clearMacroSeries(); chartTitleEl.textContent=`Rates: ${tenor}`; try{ const data=await (await fetch(`/api/ust/series?tenor=${encodeURIComponent(tenor)}`)).json(); yieldSeries.setData(data.series||[]); chart.timeScale().fitContent(); feedContentEl.textContent="Source: U.S. Treasury XML feed."; log(`Loaded yield: ${tenor}`);}catch(e){log(`Yields error: ${e}`);} }
+async function loadSpread(){ candleSeries.setData([]); yieldSeries.setData([]); clearMacroSeries(); chartTitleEl.textContent="Spread: 10Y-2Y"; try{ const data=await (await fetch(`/api/ust/spread?long_tenor=BC_10YEAR&short_tenor=BC_2YEAR`)).json(); yieldSeries.setData(data.series||[]); chart.timeScale().fitContent(); feedContentEl.textContent="Source: U.S. Treasury XML feed."; log("Loaded spread: 10Y-2Y"); }catch(e){log(`Spread error: ${e}`);} }
+async function loadFilings(ticker){ try{ const data=await (await fetch(`/api/sec/filings?ticker=${encodeURIComponent(ticker)}&count=20`)).json(); if(data.error){ feedContentEl.textContent=data.error; return; } feedContentEl.innerHTML=`<div style="font-weight:900;margin-bottom:6px;">${data.ticker} Filings</div>` + (data.items||[]).map(i=>`${i.filingDate} • <a href="${i.url}" target="_blank" rel="noreferrer">${i.form}</a>`).join("<br/>"); log(`Loaded filings: ${data.ticker}`); }catch(e){ log(`Filings error: ${e}`); } }
+
+function intervalToSeconds(interval){ const m=interval.match(/^(\d+)([mhdw])$/i); if(!m) return 60; const n=parseInt(m[1],10),u=m[2].toLowerCase(); if(u==="m") return n*60; if(u==="h") return n*3600; if(u==="d") return n*86400; if(u==="w") return n*604800; return 60; }
+function barTimeForTs(tsMs, interval){ const sec=intervalToSeconds(interval); return Math.floor((tsMs/1000)/sec)*sec; }
+function updateChartLastFromTick(t){ if(t.symbol!==selectedSymbol) return; if(Number.isFinite(t.last)) chartLastEl.textContent=`Last: ${t.last.toLocaleString()}`; const interval=intervalEl.value; if(lastBarInterval!==interval) return; const bt=barTimeForTs(t.ts||Date.now(), interval), price=t.last; if(!Number.isFinite(price)) return; if(!lastBar){ lastBar={time:bt,open:price,high:price,low:price,close:price}; candleSeries.update(lastBar); return; } if(bt===lastBar.time){ lastBar={time:lastBar.time,open:lastBar.open,high:Math.max(lastBar.high,price),low:Math.min(lastBar.low,price),close:price}; candleSeries.update(lastBar); return; } if(bt>lastBar.time){ lastBar={time:bt,open:price,high:price,low:price,close:price}; candleSeries.update(lastBar);} }
+
+function renderCards(){ cardsEl.innerHTML=""; Object.keys(state).sort().forEach(sym=>{ const t=state[sym], last=t.last??NaN, open=t.open??NaN, chg=(isFinite(last)&&isFinite(open))?last-open:NaN, chgPct=(isFinite(last)&&isFinite(open)&&open!==0)?chg/open*100:NaN; const card=document.createElement("div"); card.className="card clickable"; card.onclick=()=>{ selectedSymbol=sym; loadCandles(sym); saveState(); }; card.innerHTML=`<div class="row"><div class="sym">${sym}</div><div class="px">${isFinite(last)?last.toLocaleString():"—"}</div></div><div class="row small"><div>H: ${isFinite(t.high)?t.high.toLocaleString():"—"} • L: ${isFinite(t.low)?t.low.toLocaleString():"—"}</div><div>${isFinite(chg)?(chg>=0?"+":"")+chg.toFixed(2):"—"} (${isFinite(chgPct)?(chgPct>=0?"+":"")+chgPct.toFixed(2):"—"}%)</div></div>`; cardsEl.appendChild(card); }); }
+function getWatchlistSymbols(){ return symbolsEl.value.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean); }
+function ensureSymbolInWatchlist(sym){ const list=getWatchlistSymbols(); if(!list.includes(sym)) symbolsEl.value=[...list,sym].join(","); }
+function setIntervalValue(val){ const opt=Array.from(intervalEl.options).find(o=>o.value===val); if(!opt) return; intervalEl.value=val; loadCandles(selectedSymbol); saveState(); }
+function cycleSymbol(direction){ const list=getWatchlistSymbols(); if(!list.length) return; let idx=list.indexOf(selectedSymbol); if(idx===-1) idx=0; idx=(idx+direction+list.length)%list.length; selectedSymbol=list[idx]; loadCandles(selectedSymbol); saveState(); }
+function normalizeInterval(tok){ if(!tok) return null; const t=tok.toLowerCase(); if(t==="d"||t==="1d") return "1d"; if(t==="h"||t==="1h") return "1h"; return new Set(["1m","5m","15m","1h","4h","1d"]).has(t)?t:null; }
+function tokenizeNL(line){ return (line||"").replace(/[\(\)\[\]\{\},;]+/g," ").replace(/\s+/g," ").trim().split(" ").filter(Boolean); }
+function extractTicker(tokens){ for(const t of tokens){ const raw=t.toUpperCase(); if(/^[A-Z]{2,12}(USDT|USDC)$/.test(raw)) return raw; if(/^[A-Z]{1,10}$/.test(raw)) return raw; } return null; }
+function detectIntent(line){ const l=(line||"").toLowerCase(); if(l.includes("filing")||l.includes("10-k")||l.includes("10-q")||l.includes("edgar")) return "filings"; if(l.includes("spread")||l.includes("10-2")||l.includes("inversion")) return "spread"; if(l.includes("treasury")||l.includes("yield")||l.includes("curve")||l.startsWith("ust")) return "rates"; if(["cpi","inflation","unemployment","gdp","vix","sp500","s&p","nasdaq","fed funds","effr","dgs10","dgs2"].some(w=>l.includes(w))) return "macro"; if(l.startsWith("watch ")||l.includes("add to watch")) return "watch"; return "chart"; }
+function showHelp(){ feedContentEl.innerHTML='<div style="font-weight:900;margin-bottom:6px;">Examples</div><div class="small">AAPL<br/>BTCUSDT 5m<br/>latest filings for NVDA<br/>10-2 spread<br/>plot CPI and UNRATE 20<br/>UST 10Y<br/>SPY<br/>VTSAX<br/>show apple stock</div>'; }
+
+async function runCommand(raw){
+  const line=(raw||"").trim(); if(!line) return;
+  const parts=line.split(/\s+/), head=parts[0].toUpperCase(), tokens=tokenizeNL(line), intent=detectIntent(line);
+  if(head==="HELP"||head==="?") return showHelp();
+  if(head==="RELOAD"||head==="R") return loadCandles(selectedSymbol);
+  if(head==="CONNECT") return connect();
+  if(intent==="filings"){ const t=extractTicker(tokens); if(t) return loadFilings(t.replace(/\.US$/i,"")); }
+  if(intent==="spread") return loadSpread();
+  if(intent==="rates"){ const joined=tokens.map(t=>t.toUpperCase()).join(" "); const tenor=joined.includes("30")?"BC_30YEAR":joined.includes("20")?"BC_20YEAR":joined.includes("10")?"BC_10YEAR":joined.includes("7")?"BC_7YEAR":joined.includes("5")?"BC_5YEAR":joined.includes("3")?"BC_3YEAR":joined.includes("2")?"BC_2YEAR":"BC_10YEAR"; return loadYields(tenor); }
+  if(intent==="macro"){ let yearsBack=20; for(const t of tokens){ const n=parseInt(t,10); if(Number.isFinite(n)&&n>=1&&n<=100){ yearsBack=n; break; } } const alias={CPI:"CPIAUCSL",INFLATION:"CPIAUCSL",CORECPI:"CPILFESL",UNRATE:"UNRATE",UNEMPLOYMENT:"UNRATE",GDP:"GDP",VIX:"VIXCLS",SP500:"SP500","S&P":"SP500",NASDAQ:"NASDAQCOM",DGS10:"DGS10","10Y":"DGS10",DGS2:"DGS2","2Y":"DGS2"}; const ids=[]; for(const t of tokens){ const up=t.toUpperCase().replace(/[^A-Z0-9_&.]/g,""); if(alias[up]) ids.push(alias[up]); if(["CPIAUCSL","CPILFESL","UNRATE","GDP","SP500","VIXCLS","NASDAQCOM","DGS10","DGS2","T5YIE","T10YIE"].includes(up)) ids.push(up); } return loadFred(Array.from(new Set(ids.length?ids:["UNRATE"])).slice(0,4), yearsBack); }
+  if(head==="WATCH"&&parts[1]){ ensureSymbolInWatchlist(parts[1].toUpperCase()); saveState(); log(`Added to watchlist: ${parts[1].toUpperCase()}`); return; }
+  const ticker=extractTicker(tokens), interval=tokens.map(normalizeInterval).find(Boolean)||intervalEl.value;
+  if(ticker){ selectedSymbol=ticker; ensureSymbolInWatchlist(ticker); intervalEl.value=interval; await loadCandles(ticker); if(state[ticker]) updateChartLastFromTick(state[ticker]); saveState(); return; }
+  const ranked=rankCatalog(line).slice(0,3), chips=ranked.map(it=>`<div class="chip" data-cmd="${it.key.replace(/"/g,'&quot;')}">${it.key}</div>`).join("");
+  feedContentEl.innerHTML=`<div style="font-weight:900;margin-bottom:6px;">Did you mean…</div><div class="chips">${chips}</div>`;
+  document.querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>runCommand(ch.dataset.cmd));
+  log("Need clarification. Type HELP for examples.");
+}
+
+function connect(){ const symbols=getWatchlistSymbols().filter(s=>s.endsWith("USDT")||s.endsWith("USDC")); if(ws) ws.close(); Object.keys(state).forEach(k=>delete state[k]); renderCards(); log(`Connecting: ${symbols.join(", ")}`); ws=new WebSocket(`${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/stream?symbols=${encodeURIComponent(symbols.join(","))}`); ws.onopen=()=>{ log("WS open."); setInterval(()=>{ if(ws&&ws.readyState===1) ws.send("ping"); },15000); }; ws.onmessage=(evt)=>{ try{ const t=JSON.parse(evt.data); state[t.symbol]=t; renderCards(); updateChartLastFromTick(t); }catch{} }; ws.onclose=()=>log("WS closed."); ws.onerror=()=>log("WS error."); }
+
+cmdEl.addEventListener("input", ()=>{ const q=cmdEl.value; if(!q||q.trim().length<2) return hideTypeahead(); const items=rankCatalog(q); if(!items.length) return hideTypeahead(); showTypeahead(items); });
+cmdEl.addEventListener("blur", ()=>setTimeout(hideTypeahead,150));
+cmdEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); const v=cmdEl.value; cmdEl.value=""; hideTypeahead(); runCommand(v); } });
+window.addEventListener("keydown", e=>{ const tag=(document.activeElement&&document.activeElement.tagName)?document.activeElement.tagName.toLowerCase():""; if(e.key==="/"&&tag!=="input"&&tag!=="select"&&tag!=="textarea"){ e.preventDefault(); cmdEl.focus(); return; } if(tag==="input"||tag==="select"||tag==="textarea") return; const k=e.key; if(k==="1") return setIntervalValue("1m"); if(k==="5") return setIntervalValue("5m"); if(k==="0") return setIntervalValue("15m"); if(k==="4") return setIntervalValue("4h"); if(k==="h"||k==="H") return setIntervalValue("1h"); if(k==="d"||k==="D") return setIntervalValue("1d"); if(k==="r"||k==="R") return loadCandles(selectedSymbol); if(k==="ArrowUp"){ e.preventDefault(); return cycleSymbol(-1); } if(k==="ArrowDown"){ e.preventDefault(); return cycleSymbol(+1); } });
+symbolsEl.addEventListener("change", saveState); intervalEl.addEventListener("change", saveState);
+document.getElementById("connectBtn").onclick=()=>{ saveState(); connect(); };
+document.getElementById("clearBtn").onclick=()=>{ logEl.textContent=""; };
+
+async function loadSnapshot(){
+  try{
+    const data = await (await fetch("/api/snapshot")).json();
+    const vals = [data.BTCUSDT, data.SP500, data.DGS10, data.UST_10Y_2Y];
+    const labels = ["BTC","S&P 500","10Y","10-2"];
+    const grid = document.getElementById("snapshotGrid");
+    if(!grid) return;
+    grid.innerHTML = labels.map((label, i) => {
+      const v = vals[i];
+      const fmt = v === null || v === undefined ? "—" :
+        (Math.abs(v) >= 1000 ? Number(v).toLocaleString(undefined,{maximumFractionDigits:2}) : Number(v).toFixed(2));
+      return `<div class="metric"><div class="label">${label}</div><div class="val">${fmt}</div></div>`;
+    }).join("");
+  }catch(e){ log("Snapshot error"); }
+}
+
+function wireQuickActions(){
+  document.querySelectorAll(".quickbtn").forEach(btn => {
+    btn.onclick = () => runCommand(btn.dataset.cmd);
+  });
+}
+
+(async function init(){ await loadCatalog(); wireQuickActions(); const saved=loadState(); if(saved?.symbols) symbolsEl.value=saved.symbols; if(saved?.interval) intervalEl.value=saved.interval; if(saved?.selectedSymbol) selectedSymbol=saved.selectedSymbol; connect(); loadCandles(selectedSymbol); loadSnapshot(); setInterval(loadSnapshot, 60000); })();
+</script>
+</body>
+</html>
