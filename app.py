@@ -11,6 +11,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
+SEC_API_KEY = os.getenv("SEC_API_KEY")
+
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
