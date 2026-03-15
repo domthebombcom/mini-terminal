@@ -16,7 +16,6 @@ templates = Jinja2Templates(directory="templates")
 APP_USER_AGENT = os.getenv("APP_USER_AGENT", "mini-terminal-v3.1/1.0 (contact: you@example.com)")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
 FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "").strip()
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "").strip()
 LATEST: Dict[str, dict] = {}
 CLIENTS: Set["Client"] = set()
