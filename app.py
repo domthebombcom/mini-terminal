@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 from typing import Dict, Set, List
 import urllib.parse
@@ -11,11 +12,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
-FRED_API_KEY = os.getenv("FRED_API_KEY", "")
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
-POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
-SEC_API_KEY = os.getenv("SEC_API_KEY")
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
+FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "").strip()
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
