@@ -1,147 +1,240 @@
 import asyncio
-import json
+import base64
+import csv
+import io
 import os
-import time
-from typing import Dict, Set, List
-import urllib.parse
-import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import List, Optional
 
-import websockets
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
-FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
-POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "").strip()
-
-app = FastAPI()
+app = FastAPI(title="Telegram Channel Catalog")
 templates = Jinja2Templates(directory="templates")
 
-# Latest tick cache: symbol -> tick dict
-LATEST: Dict[str, dict] = {}
 
-class Client:
-    def __init__(self, ws: WebSocket, symbols: Set[str]):
-        self.ws = ws
-        self.symbols = symbols
+@dataclass
+class TelegramConfig:
+    api_id: Optional[int]
+    api_hash: Optional[str]
+    string_session: Optional[str]
 
-CLIENTS: Set[Client] = set()
 
-def binance_stream_url(symbols: List[str]) -> str:
-    streams = "/".join([f"{s.lower()}@miniTicker" for s in symbols])
-    return f"wss://stream.binance.com:9443/stream?streams={streams}"
+def load_telegram_config() -> TelegramConfig:
+    api_id_raw = os.getenv("TELEGRAM_API_ID", "").strip()
+    api_hash = os.getenv("TELEGRAM_API_HASH", "").strip() or None
+    string_session = os.getenv("TELEGRAM_STRING_SESSION", "").strip() or None
 
-async def binance_consumer(symbols: List[str]):
-    url = binance_stream_url(symbols)
-    backoff = 1
-
-    while True:
+    api_id: Optional[int] = None
+    if api_id_raw:
         try:
-            async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                backoff = 1
-                while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
+            api_id = int(api_id_raw)
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail="TELEGRAM_API_ID must be an integer") from exc
 
-                    payload = data.get("data", {})
-                    symbol = payload.get("s")
-                    if not symbol:
-                        continue
+    return TelegramConfig(api_id=api_id, api_hash=api_hash, string_session=string_session)
 
-                    tick = {
-                        "symbol": symbol,
-                        "last": float(payload.get("c", "nan")),
-                        "open": float(payload.get("o", "nan")),
-                        "high": float(payload.get("h", "nan")),
-                        "low": float(payload.get("l", "nan")),
-                        "volume": float(payload.get("v", "nan")),
-                        "ts": int(time.time() * 1000),
-                    }
-                    LATEST[symbol] = tick
 
-                    dead_clients = []
-                    for client in list(CLIENTS):
-                        if symbol in client.symbols:
-                            try:
-                                await client.ws.send_text(json.dumps(tick))
-                            except Exception:
-                                dead_clients.append(client)
-                    for dc in dead_clients:
-                        CLIENTS.discard(dc)
+class ScrapeRequest(BaseModel):
+    channels: List[str] = Field(default_factory=list)
+    limit_per_channel: int = Field(default=100, ge=1, le=1000)
+    include_image_data: bool = True
 
-        except Exception:
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30)
 
-@app.on_event("startup")
-async def startup():
-    symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-    asyncio.create_task(binance_consumer(symbols))
+class PostRecord(BaseModel):
+    channel: str
+    post_id: int
+    timestamp_utc: str
+    text: str
+    text_length: int
+    word_count: int
+    has_image: bool
+    media_type: str
+    image_mime_type: Optional[str] = None
+    image_size_bytes: Optional[int] = None
+    image_base64: Optional[str] = None
+
+
+class ScrapeResponse(BaseModel):
+    records: List[PostRecord]
+    summary: dict
+
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.websocket("/ws/stream")
-async def ws_stream(websocket: WebSocket):
-    await websocket.accept()
+
+@app.get("/api/telegram/config")
+async def telegram_config_status():
+    cfg = load_telegram_config()
+    return {
+        "api_id_set": cfg.api_id is not None,
+        "api_hash_set": cfg.api_hash is not None,
+        "string_session_set": cfg.string_session is not None,
+    }
+
+
+async def build_client(cfg: TelegramConfig):
+    if not cfg.api_id or not cfg.api_hash:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Set both in your environment.",
+        )
+
     try:
-        query = websocket.query_params.get("symbols", "BTCUSDT,ETHUSDT")
-        symbols = {s.strip().upper() for s in query.split(",") if s.strip()}
-        client = Client(websocket, symbols)
-        CLIENTS.add(client)
+        from telethon import TelegramClient
+        from telethon.sessions import StringSession
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="telethon is not installed. Run `pip install -r requirements.txt`.") from exc
 
-        # Send snapshot immediately
-        for s in symbols:
-            if s in LATEST:
-                await websocket.send_text(json.dumps(LATEST[s]))
+    session = StringSession(cfg.string_session) if cfg.string_session else "telegram-session"
+    client = TelegramClient(session, cfg.api_id, cfg.api_hash)
+    await client.connect()
 
-        while True:
-            # Keep connection alive; we don't require client messages yet
-            await websocket.receive_text()
+    if not await client.is_user_authorized():
+        await client.disconnect()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Telegram session is not authorized. Generate TELEGRAM_STRING_SESSION using your own account "
+                "(or authorize the local session file once) before scraping."
+            ),
+        )
 
-    except WebSocketDisconnect:
-        pass
+    return client
+
+
+async def extract_image_payload(message, include_image_data: bool):
+    if not message.photo:
+        return None
+
+    if not include_image_data:
+        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+
+    data = await message.download_media(file=bytes)
+    if not data:
+        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+
+    mime = "image/jpeg"
+    encoded = base64.b64encode(data).decode("utf-8")
+    return {
+        "image_mime_type": mime,
+        "image_size_bytes": len(data),
+        "image_base64": f"data:{mime};base64,{encoded}",
+    }
+
+
+@app.post("/api/telegram/scrape", response_model=ScrapeResponse)
+async def scrape_telegram_posts(payload: ScrapeRequest):
+    channels = [c.strip() for c in payload.channels if c.strip()]
+    if not channels:
+        raise HTTPException(status_code=400, detail="Provide at least one channel username/link.")
+
+    cfg = load_telegram_config()
+    client = await build_client(cfg)
+
+    records: List[PostRecord] = []
+    try:
+        for channel in channels:
+            try:
+                entity = await client.get_entity(channel)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Unable to resolve channel: {channel}") from exc
+
+            async for message in client.iter_messages(entity, limit=payload.limit_per_channel):
+                if not message:
+                    continue
+
+                text = (message.message or "").strip()
+                media_type = "photo" if message.photo else ("video" if message.video else ("document" if message.document else "none"))
+                image_data = await extract_image_payload(message, payload.include_image_data)
+
+                ts = message.date
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                ts_iso = ts.astimezone(timezone.utc).isoformat()
+
+                records.append(
+                    PostRecord(
+                        channel=channel,
+                        post_id=message.id,
+                        timestamp_utc=ts_iso,
+                        text=text,
+                        text_length=len(text),
+                        word_count=len(text.split()) if text else 0,
+                        has_image=bool(message.photo),
+                        media_type=media_type,
+                        image_mime_type=image_data["image_mime_type"] if image_data else None,
+                        image_size_bytes=image_data["image_size_bytes"] if image_data else None,
+                        image_base64=image_data["image_base64"] if image_data else None,
+                    )
+                )
+
+    except Exception as exc:
+        err_name = exc.__class__.__name__
+        if err_name in {"RPCError", "FloodWaitError", "AuthKeyError"}:
+            raise HTTPException(status_code=502, detail=f"Telegram API error: {exc}") from exc
+        raise
     finally:
-        to_remove = [c for c in CLIENTS if c.ws == websocket]
-        for c in to_remove:
-            CLIENTS.discard(c)
+        await client.disconnect()
 
-def _http_get_json(url: str, timeout: int = 10):
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "mini-terminal/1.0"},
-        method="GET",
+    records.sort(key=lambda x: x.timestamp_utc, reverse=True)
+
+    summary = {
+        "total_posts": len(records),
+        "channels": sorted(list({r.channel for r in records})),
+        "posts_with_images": sum(1 for r in records if r.has_image),
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    return ScrapeResponse(records=records, summary=summary)
+
+
+@app.post("/api/telegram/export.csv")
+async def export_csv(payload: ScrapeRequest):
+    scrape_result = await scrape_telegram_posts(payload)
+
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "channel",
+            "post_id",
+            "timestamp_utc",
+            "text",
+            "text_length",
+            "word_count",
+            "has_image",
+            "media_type",
+            "image_mime_type",
+            "image_size_bytes",
+        ],
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    writer.writeheader()
+    for row in scrape_result.records:
+        writer.writerow(
+            {
+                "channel": row.channel,
+                "post_id": row.post_id,
+                "timestamp_utc": row.timestamp_utc,
+                "text": row.text,
+                "text_length": row.text_length,
+                "word_count": row.word_count,
+                "has_image": row.has_image,
+                "media_type": row.media_type,
+                "image_mime_type": row.image_mime_type,
+                "image_size_bytes": row.image_size_bytes,
+            }
+        )
 
-@app.get("/api/candles")
-async def get_candles(symbol: str = "BTCUSDT", interval: str = "1m", limit: int = 500):
-    """
-    Free historical candles from Binance Klines API.
-    interval examples: 1m, 5m, 15m, 1h, 4h, 1d
-    """
-    symbol = symbol.strip().upper()
-    interval = interval.strip()
-    limit = max(10, min(int(limit), 1000))
-
-    params = urllib.parse.urlencode({"symbol": symbol, "interval": interval, "limit": limit})
-    url = f"https://api.binance.com/api/v3/klines?{params}"
-    raw = _http_get_json(url)
-
-    candles = []
-    for k in raw:
-        open_time_ms = int(k[0])
-        candles.append({
-            "time": open_time_ms // 1000,  # seconds
-            "open": float(k[1]),
-            "high": float(k[2]),
-            "low": float(k[3]),
-            "close": float(k[4]),
-            "volume": float(k[5]),
-        })
-
-    return {"symbol": symbol, "interval": interval, "candles": candles}
+    output.seek(0)
+    filename = f"telegram-posts-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
