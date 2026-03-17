@@ -1,25 +1,26 @@
-# Mini Terminal (free data)
+# Telegram Channel Post Catalog
 
-This is a Bloomberg-style mini terminal using **free** Binance data:
-- Real-time crypto quotes via Binance WebSocket (miniTicker)
-- Candlestick charts via Binance REST klines
-- Command bar + hotkeys
-- Live candle updates from ticks
+Web app to scrape Telegram channel posts that your own account can access, then analyze and catalog those posts in a sortable/filterable table with CSV export.
 
-## Run locally
-1) Install Python 3.10+
-2) In this folder:
-   - `python -m venv .venv`
-   - `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`)
+## Features
+- Scrape posts from multiple Telegram channels/usernames/links.
+- Capture UTC timestamp, post text, word counts, media type, and image previews (base64).
+- Sort/filter the table by timestamp, channel, post ID, media type, and text fields.
+- Export the catalog data to CSV.
+
+## Setup
+1. Create and activate a virtual environment.
+2. Install dependencies:
    - `pip install -r requirements.txt`
-3) Start:
-   - `uvicorn app:app --reload --port 8000`
-4) Open:
-   - http://localhost:8000
+3. Set Telegram credentials in environment variables:
+   - `TELEGRAM_API_ID` (integer)
+   - `TELEGRAM_API_HASH`
+   - `TELEGRAM_STRING_SESSION` (recommended, from your own account setup)
 
-## Deploy to Render (private-ish link)
-1) Put this repo on GitHub
-2) In Render: New + → Blueprint → select repo → Apply
-3) Use the provided URL on your phone.
+## Run
+- `uvicorn app:app --reload --port 8000`
+- Open `http://localhost:8000`
 
-Note: Render free plan may sleep when idle.
+## Notes
+- This app uses your own Telegram account session; separate account authorization/setup is required.
+- Scraping is limited to channels that your account can access.
