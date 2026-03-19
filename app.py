@@ -110,17 +110,23 @@ async def build_client(cfg: TelegramConfig):
 
 
 async def extract_image_payload(message, include_image_data: bool):
-    if not message.photo:
+    is_photo = bool(message.photo)
+    mime = None
+    if is_photo:
+        mime = "image/jpeg"
+    elif message.document and getattr(message.document, "mime_type", "").startswith("image/"):
+        mime = message.document.mime_type
+
+    if not mime:
         return None
 
     if not include_image_data:
-        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+        return {"image_mime_type": mime, "image_size_bytes": None, "image_base64": None}
 
     data = await message.download_media(file=bytes)
     if not data:
-        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+        return {"image_mime_type": mime, "image_size_bytes": None, "image_base64": None}
 
-    mime = "image/jpeg"
     encoded = base64.b64encode(data).decode("utf-8")
     return {
         "image_mime_type": mime,
@@ -151,7 +157,12 @@ async def scrape_telegram_posts(payload: ScrapeRequest):
                     continue
 
                 text = (message.message or "").strip()
-                media_type = "photo" if message.photo else ("video" if message.video else ("document" if message.document else "none"))
+                has_document_image = bool(message.document and getattr(message.document, "mime_type", "").startswith("image/"))
+                media_type = (
+                    "photo"
+                    if message.photo
+                    else ("image_document" if has_document_image else ("video" if message.video else ("document" if message.document else "none")))
+                )
                 image_data = await extract_image_payload(message, payload.include_image_data)
 
                 ts = message.date
@@ -167,7 +178,7 @@ async def scrape_telegram_posts(payload: ScrapeRequest):
                         text=text,
                         text_length=len(text),
                         word_count=len(text.split()) if text else 0,
-                        has_image=bool(message.photo),
+                        has_image=bool(message.photo or has_document_image),
                         media_type=media_type,
                         image_mime_type=image_data["image_mime_type"] if image_data else None,
                         image_size_bytes=image_data["image_size_bytes"] if image_data else None,
