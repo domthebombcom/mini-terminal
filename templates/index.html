@@ -36,6 +36,12 @@
 
     <div class="card">
       <div class="grid">
+        <div style="grid-column: 1 / -1;">
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="includeImageData" type="checkbox" checked style="width:auto;" />
+            Include image binary data (base64 previews) in response
+          </label>
+        </div>
         <div>
           <label>Channels/Usernames/Links (one per line)</label>
           <textarea id="channels" rows="4" placeholder="@durov\nhttps://t.me/example_channel"></textarea>
@@ -101,7 +107,8 @@
   function getPayload() {
     const channels = document.getElementById('channels').value.split('\n').map(s => s.trim()).filter(Boolean);
     const limit = Number(document.getElementById('limit').value || 100);
-    return { channels, limit_per_channel: limit, include_image_data: true };
+    const includeImageData = document.getElementById('includeImageData').checked;
+    return { channels, limit_per_channel: limit, include_image_data: includeImageData };
   }
 
   function renderSummary() {

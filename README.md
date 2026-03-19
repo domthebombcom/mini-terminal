@@ -17,6 +17,24 @@ Web app to scrape Telegram channel posts that your own account can access, then 
    - `TELEGRAM_API_HASH`
    - `TELEGRAM_STRING_SESSION` (recommended, from your own account setup)
 
+
+### Telegram account setup (one-time)
+Use your own Telegram account to generate a reusable `TELEGRAM_STRING_SESSION`:
+
+```bash
+python - <<'PY'
+from telethon.sync import TelegramClient
+from telethon.sessions import StringSession
+
+api_id = int(input("API ID: "))
+api_hash = input("API Hash: ").strip()
+with TelegramClient(StringSession(), api_id, api_hash) as client:
+    print("\nTELEGRAM_STRING_SESSION=", client.session.save())
+PY
+```
+
+Store that value in your environment before starting the app.
+
 ## Run
 - `uvicorn app:app --reload --port 8000`
 - Open `http://localhost:8000`
