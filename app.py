@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import csv
 import io
@@ -12,6 +11,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from starlette.requests import Request
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 app = FastAPI(title="Telegram Channel Catalog")
 templates = Jinja2Templates(directory="templates")
@@ -76,6 +77,7 @@ async def telegram_config_status():
         "api_id_set": cfg.api_id is not None,
         "api_hash_set": cfg.api_hash is not None,
         "string_session_set": cfg.string_session is not None,
+        "string_session_only": True,
     }
 
 
@@ -85,14 +87,16 @@ async def build_client(cfg: TelegramConfig):
             status_code=400,
             detail="Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Set both in your environment.",
         )
+    if not cfg.string_session:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing TELEGRAM_STRING_SESSION. Generate one with "
+                "`python generate_telegram_string_session.py` and set it in your environment."
+            ),
+        )
 
-    try:
-        from telethon import TelegramClient
-        from telethon.sessions import StringSession
-    except ImportError as exc:
-        raise HTTPException(status_code=500, detail="telethon is not installed. Run `pip install -r requirements.txt`.") from exc
-
-    session = StringSession(cfg.string_session) if cfg.string_session else "telegram-session"
+    session = StringSession(cfg.string_session)
     client = TelegramClient(session, cfg.api_id, cfg.api_hash)
     await client.connect()
 
@@ -101,8 +105,8 @@ async def build_client(cfg: TelegramConfig):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Telegram session is not authorized. Generate TELEGRAM_STRING_SESSION using your own account "
-                "(or authorize the local session file once) before scraping."
+                "Telegram string session is not authorized. Regenerate TELEGRAM_STRING_SESSION using your own "
+                "account before scraping."
             ),
         )
 
