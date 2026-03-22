@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import csv
 import io
@@ -12,6 +11,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from starlette.requests import Request
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 app = FastAPI(title="Telegram Channel Catalog")
 templates = Jinja2Templates(directory="templates")
@@ -76,6 +77,7 @@ async def telegram_config_status():
         "api_id_set": cfg.api_id is not None,
         "api_hash_set": cfg.api_hash is not None,
         "string_session_set": cfg.string_session is not None,
+        "string_session_only": True,
     }
 
 
@@ -85,14 +87,16 @@ async def build_client(cfg: TelegramConfig):
             status_code=400,
             detail="Missing TELEGRAM_API_ID or TELEGRAM_API_HASH. Set both in your environment.",
         )
+    if not cfg.string_session:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing TELEGRAM_STRING_SESSION. Generate one with "
+                "`python generate_telegram_string_session.py` and set it in your environment."
+            ),
+        )
 
-    try:
-        from telethon import TelegramClient
-        from telethon.sessions import StringSession
-    except ImportError as exc:
-        raise HTTPException(status_code=500, detail="telethon is not installed. Run `pip install -r requirements.txt`.") from exc
-
-    session = StringSession(cfg.string_session) if cfg.string_session else "telegram-session"
+    session = StringSession(cfg.string_session)
     client = TelegramClient(session, cfg.api_id, cfg.api_hash)
     await client.connect()
 
@@ -101,8 +105,8 @@ async def build_client(cfg: TelegramConfig):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Telegram session is not authorized. Generate TELEGRAM_STRING_SESSION using your own account "
-                "(or authorize the local session file once) before scraping."
+                "Telegram string session is not authorized. Regenerate TELEGRAM_STRING_SESSION using your own "
+                "account before scraping."
             ),
         )
 
@@ -110,17 +114,23 @@ async def build_client(cfg: TelegramConfig):
 
 
 async def extract_image_payload(message, include_image_data: bool):
-    if not message.photo:
+    is_photo = bool(message.photo)
+    mime = None
+    if is_photo:
+        mime = "image/jpeg"
+    elif message.document and getattr(message.document, "mime_type", "").startswith("image/"):
+        mime = message.document.mime_type
+
+    if not mime:
         return None
 
     if not include_image_data:
-        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+        return {"image_mime_type": mime, "image_size_bytes": None, "image_base64": None}
 
     data = await message.download_media(file=bytes)
     if not data:
-        return {"image_mime_type": "image/jpeg", "image_size_bytes": None, "image_base64": None}
+        return {"image_mime_type": mime, "image_size_bytes": None, "image_base64": None}
 
-    mime = "image/jpeg"
     encoded = base64.b64encode(data).decode("utf-8")
     return {
         "image_mime_type": mime,
@@ -151,7 +161,12 @@ async def scrape_telegram_posts(payload: ScrapeRequest):
                     continue
 
                 text = (message.message or "").strip()
-                media_type = "photo" if message.photo else ("video" if message.video else ("document" if message.document else "none"))
+                has_document_image = bool(message.document and getattr(message.document, "mime_type", "").startswith("image/"))
+                media_type = (
+                    "photo"
+                    if message.photo
+                    else ("image_document" if has_document_image else ("video" if message.video else ("document" if message.document else "none")))
+                )
                 image_data = await extract_image_payload(message, payload.include_image_data)
 
                 ts = message.date
@@ -167,7 +182,7 @@ async def scrape_telegram_posts(payload: ScrapeRequest):
                         text=text,
                         text_length=len(text),
                         word_count=len(text.split()) if text else 0,
-                        has_image=bool(message.photo),
+                        has_image=bool(message.photo or has_document_image),
                         media_type=media_type,
                         image_mime_type=image_data["image_mime_type"] if image_data else None,
                         image_size_bytes=image_data["image_size_bytes"] if image_data else None,
